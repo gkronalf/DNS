@@ -1,0 +1,97 @@
+---
+
+- hosts: all
+  become: yes
+  tasks:
+
+#Установка пакетов bind, bind-utils и ntp
+  - name: "install packages"
+    yum: 
+      name:
+        - bind
+        - bind-utils
+        - vim
+      state: present
+      update_cache: true 
+
+  - name: start chronyd
+    service: 
+      name: chronyd
+      state: restarted
+      enabled: true
+
+#Копирование файла named.zonetransfer.key на хосты с правами 0644
+#Владелец файла — root, група файла — named
+  - name: copy transferkey to all servers and the client
+    copy: 
+      src: templates/named.zonetransfer.key
+      dest: /etc/named.zonetransfer.key
+      owner: root
+      group: named
+      mode: 0644
+
+#Копирование конфигурации DNS-сервера
+  - name: copy named.conf
+    template:
+      src: templates/named.conf.j2
+      dest: /etc/named.conf
+      owner: root
+      group: named
+      mode: 0640
+    when: "'servers' in group_names"
+
+#Копирование файлов с настроками зоны. 
+#Будут скопированы все файлы, в имя которых начинается на «named.d»
+  - name: copy zones
+    copy: 
+      src: templates/{{ item }}
+      dest: /etc/named/
+      owner: root
+      group: named
+      mode: 0660
+    with_items:
+      - named.dns.lab
+      - named.ddns.lab
+      - named.dns.lab.rev
+      - newdns.lab
+    when: "'servers' in group_names"
+
+#Копирование файла resolv.conf
+  - name: copy resolv.conf to the servers
+    template: 
+      src: templates/servers-resolv.conf.j2 
+      dest: /etc/resolv.conf 
+      owner: root 
+      group: root
+      mode: 0644
+    when: "'servers' in group_names"
+
+  - name: restart named
+    service:
+      name: named
+      state: restarted
+      enabled: true
+    when: "'servers' in group_names"
+
+# #Настройка клиентов
+#   - name: copy resolv.conf to the client
+#     copy: 
+#       src: client-resolv.conf
+#       dest: /etc/resolv.conf
+#       owner: root
+#       group: root
+#       mode: 0644
+#     when: "'clients' in group_names"
+
+# - hosts: client,client2
+#   become: yes
+#   tasks:
+#   - name: copy resolv.conf to the client
+#     copy: src=client-resolv.conf dest=/etc/resolv.conf owner=root group=root mode=0644
+
+# #Копирование конфигруационного файла rndc
+#   - name: copy rndc conf file
+#     copy: src=rndc.conf dest=/home/vagrant/rndc.conf owner=vagrant group=vagrant mode=0644
+# #Настройка сообщения при входе на сервер
+#   - name: copy motd to the client
+#     copy: src=client-motd dest=/etc/motd owner=root group=root mode=0644

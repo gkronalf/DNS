@@ -1,0 +1,121 @@
+//
+// named.conf
+//
+// Provided by Red Hat bind package to configure the ISC BIND named(8) DNS
+// server as a caching only nameserver (as a localhost DNS resolver only).
+//
+// See /usr/share/doc/bind*/sample/ for example named configuration files.
+//
+// See the BIND Administrator's Reference Manual (ARM) for details about the
+// configuration located in /usr/share/doc/bind-{version}/Bv9ARM.html
+
+options {
+        listen-on port 53 { {{ ansible_eth1["ipv4"]["address"] }}; };
+        listen-on-v6 port 53 { ::1; };
+
+        // data
+	directory 	"/var/named";
+	dump-file 	"/var/named/data/cache_dump.db";
+	statistics-file "/var/named/data/named_stats.txt";
+	memstatistics-file "/var/named/data/named_mem_stats.txt";
+
+    // server
+	recursion yes;
+	allow-query     { any; };
+        allow-transfer { any; };
+
+    // dnssec
+	dnssec-enable yes;
+	dnssec-validation yes;
+
+    // others
+	bindkeys-file "/etc/named.iscdlv.key";
+	managed-keys-directory "/var/named/dynamic";
+	pid-file "/run/named/named.pid";
+	session-keyfile "/run/named/session.key";
+};
+
+logging {
+        channel default_debug {
+                file "data/named.run";
+                severity dynamic;
+        };
+};
+
+// RNDC Control for client
+key "rndc-key" {
+    algorithm hmac-md5;
+    secret "GrtiE9kz16GK+OKKU/qJvQ==";
+};
+
+controls {
+        inet {{ ansible_eth1["ipv4"]["address"] }} allow { 192.168.10.15; 192.168.10.16; } keys { "rndc-key"; };
+};
+
+{% if ansible_hostname == 'ns01'%}
+// ZONE TRANSFER WITH TSIG
+include "/etc/named.zonetransfer.key"; 
+server 192.168.10.11 {
+    keys { "zonetransfer.key"; };
+};
+
+// root zone
+zone "." IN {
+	type hint;
+	file "named.ca";
+};
+
+// lab's zone
+zone "dns.lab" {
+    type master;
+    allow-transfer { key "zonetransfer.key"; };
+    file "/etc/named/named.dns.lab";
+};
+
+// lab's zone reverse
+zone "10.168.192.in-addr.arpa" {
+    type master;
+    allow-transfer { key "zonetransfer.key"; };
+    file "/etc/named/named.dns.lab.rev";
+};
+
+// lab's ddns zone
+zone "ddns.lab" {
+    type master;
+    allow-transfer { key "zonetransfer.key"; };
+    allow-update { key "zonetransfer.key"; };
+    file "/etc/named/named.ddns.lab";
+};
+{% endif %}
+
+
+{% if ansible_hostname == 'ns02' %}     
+// ZONE TRANSFER WITH TSIG
+include "/etc/named.zonetransfer.key";
+server 192.168.10.10 {
+    keys { "zonetransfer.key"; };
+};
+
+// root zone
+zone "." IN {
+	type hint;
+	file "named.ca";
+};
+
+// lab's zone
+zone "dns.lab" {
+    type slave;
+    masters { 192.168.10.10; };
+    file "/etc/named/named.dns.lab";
+};
+
+// lab's zone reverse
+zone "10.168.192.in-addr.arpa" {
+    type slave;
+    masters { 192.168.10.10; };
+    file "/etc/named/named.dns.lab.rev";
+};
+{% endif %}
+
+include "/etc/named.rfc1912.zones";
+include "/etc/named.root.key";
